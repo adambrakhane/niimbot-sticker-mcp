@@ -1,0 +1,23 @@
+[project]
+name = "niimbot"
+version = "0.1.0"
+description = "Python BLE driver and MCP server for NIIMBOT B1 Pro label printer"
+requires-python = ">=3.10"
+dependencies = [
+    "bleak>=0.21",
+    "Pillow>=10.0",
+]
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.0"]
+
+[project.scripts]
+niimbot-print = "niimbot.tools.fast_print:cli"
+niimbot-calibrate = "niimbot.tools.calibrate:cli"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
