@@ -6,6 +6,7 @@ requires-python = ">=3.10"
 dependencies = [
     "bleak>=0.21",
     "Pillow>=10.0",
+    "pyusb>=1.2",
 ]
 
 [project.optional-dependencies]
@@ -14,6 +15,7 @@ mcp = ["mcp>=1.0"]
 [project.scripts]
 niimbot-print = "niimbot.tools.fast_print:cli"
 niimbot-calibrate = "niimbot.tools.calibrate:cli"
+niimbotd = "niimbot.daemon:cli"
 
 [build-system]
 requires = ["setuptools>=68"]

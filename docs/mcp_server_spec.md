@@ -7,7 +7,7 @@ Claude Code instance (any project)
     ↓ stdio
 MCP Server (Node/TS or Python)
     ↓
-Renderer (Pillow) → 319×240px PNG (40×30mm @ 203 DPI)
+Renderer (Pillow) → 568×350px PNG (40×30mm @ 300 DPI)
     ↓
 Printer (niimbot_ble) → BLE → NIIMBOT P1 Pro
 ```
@@ -25,46 +25,103 @@ One tool: `print_sticker`
 | `body` | string | no | Additional detail, auto-scaled to fit |
 | `project` | string | no | Project/product name for context strip |
 | `reference` | string | no | File path, ticket ID, or external ref |
+| `dry_run` | bool | no | If true, return preview image without printing |
 
 Returns: success/failure + a base64 preview of the rendered sticker so Claude can show you what it printed.
+
+### Design Principles — Minimal Friction
+
+The goal is fast, low-effort sticker creation. The user should be able to say something vague and get a sticker printed in seconds.
+
+**Only `title` and `category` are required. Everything else is inferred or omitted.**
+
+- **`category`** — Claude should infer from context when possible:
+  - "this is broken in prod" / "fix this now" / "blocking deploy" → `urgent`
+  - "we should do X" / "add support for Y" / "refactor Z" → `ticket`
+  - "what if we..." / "random thought" / "wouldn't it be cool" → `idea`
+  - "long-term, we need..." / "vision for Q3" / "big picture" → `big_idea`
+  - If genuinely ambiguous, ask — but bias toward just picking one. Don't overthink it.
+- **`project`** — Infer from the current working directory or repo name. Don't ask.
+- **`reference`** — Use if there's a ticket number, file path, or URL in the conversation. If not, omit. Never ask for one.
+- **`body`** — Include if there's useful extra context. A short title can stand alone. Don't pad it.
+- **`dry_run`** — Use when the user asks to preview before printing, or on the first print of a session to confirm the printer works.
+
+### Example Invocations
+
+**Minimal — user just wants a quick note:**
+> "Print me a sticker that says 'check API rate limits'"
+
+```json
+{"category": "ticket", "title": "Check API rate limits", "project": "niimbot"}
+```
+
+**Urgent from conversation context:**
+> "The deploy is failing, auth tokens expire after 5 min. Can you print that so I don't forget?"
+
+```json
+{"category": "urgent", "title": "Fix auth token expiry", "body": "Tokens expire after 5 min, blocking deploy", "project": "niimbot"}
+```
+
+**Idea — casual:**
+> "What if we kept the BLE connection alive between prints?"
+
+```json
+{"category": "idea", "title": "Persistent BLE connection", "body": "Skip 1.5s reconnect on every print", "project": "niimbot"}
+```
+
+**Fully specified — user provides everything:**
+> "Print an urgent sticker: 'DB migration failing', body: 'Rollback needed on prod-east-2', ref INFRA-891"
+
+```json
+{"category": "urgent", "title": "DB migration failing", "body": "Rollback needed on prod-east-2", "project": "niimbot", "reference": "INFRA-891"}
+```
+
+**Big idea with no body:**
+> "Big idea: unified design system for all label types"
+
+```json
+{"category": "big_idea", "title": "Unified label design system", "project": "niimbot"}
+```
 
 ### Visual Language (4 Styles)
 
 All stickers share a structure but each category has a **distinct identity recognizable at arm's length:**
 
-**Canvas:** 319×240px, 1-bit or grayscale (thermal printer). All styling is through layout, weight, borders, and fill patterns — no color.
+**Canvas:** 568×350px, 1-bit (thermal printer, 300 DPI, 40×30mm label). All styling is through layout, weight, borders, and fill patterns — no color.
 
-#### 1. URGENT — Maximum visual weight
-- **Full black header bar** (~40% of sticker) with inverted white text: `⚠ URGENT`
-- Title in bold, large type below
-- Body in smaller type if present
-- Project name in small caps at bottom
-- **Thick border** around entire sticker
-- *Feel: You can't miss it. Black-heavy, high contrast.*
+#### 1. URGENT — Full invert, white on black
+- **Entire sticker is black background with white text**
+- Small "URGENT" tag top-left
+- Title large, bold, white
+- Body in regular white text
+- Project bottom-left, reference bottom-right
+- Thin white inset border
+- *Feel: Maximum ink, maximum contrast. Impossible to miss from across the room.*
 
-#### 2. TICKET — Structured, workmanlike
-- **Thin top strip** with project name (black bg, white text)
-- Title in medium-weight type, left-aligned
-- Body text below in smaller type
-- Reference/ticket ID in a `monospace pill` at bottom-right
-- **Single-line border**
-- *Feel: A miniature Jira card. Clean, scannable.*
+#### 2. TICKET — Sidebar
+- **Black vertical sidebar on left** with project name stacked vertically in white
+- Title large, bold, to the right of sidebar
+- Body below in regular text
+- Reference (ticket ID) in monospace, bottom-right
+- *Feel: Structured, workmanlike. Like a mini Jira card.*
 
-#### 3. IDEA — Light, approachable
-- **No border.** Open/airy.
-- Small `💡 IDEA` label top-left (or a lightbulb glyph rendered as bitmap)
-- Title in medium type, centered
-- Body in italic if present
-- Project name bottom-right, subtle
-- *Feel: Post-it energy. Low pressure.*
+#### 3. IDEA — Post-it with lightbulb
+- **Light border** like a sticky note
+- Small **lightbulb icon** in top-right corner (drawn as circle + rays + base)
+- "IDEA" label top-left
+- Title large, bold, left-aligned
+- Body below
+- Project bottom-right, subtle
+- *Feel: Post-it energy. Light, approachable, low pressure.*
 
-#### 4. BIG IDEA — Bold but aspirational
-- **Double-line border** (distinctive from Urgent's thick single)
-- `★ BIG IDEA` header in large outline/stroke text (not filled — distinguishes from Urgent's solid black)
-- Title large, centered
-- Body below in regular weight
-- Project/reference at bottom
-- *Feel: Blueprint for something important. Stands out but differently than Urgent.*
+#### 4. BIG IDEA — Sunburst rays
+- **Dashed rays radiating from center** as the border/background pattern
+- White content box in the center over the rays
+- "BIG IDEA" tag centered at top with horizontal rule below
+- Title large, bold, centered
+- Body centered below
+- Project | reference at bottom, centered
+- *Feel: Aspirational, bold, distinctive. The rays catch the eye differently from any other category.*
 
 ### Text Scaling Logic
 

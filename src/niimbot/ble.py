@@ -91,11 +91,12 @@ class NiimbotPacket:
 class NiimbotBLE:
     """BLE transport for NIIMBOT printers."""
 
-    def __init__(self):
+    def __init__(self, disconnected_callback=None):
         self.client = None
         self._rx_buffer = bytearray()
         self._rx_event = asyncio.Event()
-        self._use_alt = False  # Whether to use alt service
+        self._use_alt = False
+        self._disconnected_callback = disconnected_callback
 
     def _notification_handler(self, sender, data: bytearray):
         log.debug(f"RX ({len(data)} bytes): {data.hex()}")
@@ -133,7 +134,8 @@ class NiimbotBLE:
             if address is None:
                 raise RuntimeError("No NIIMBOT printer found")
 
-        self.client = BleakClient(address, timeout=connect_timeout)
+        self.client = BleakClient(address, timeout=connect_timeout,
+                                   disconnected_callback=self._disconnected_callback)
         await self.client.connect()
         log.info(f"Connected: {self.client.is_connected}")
 
@@ -160,10 +162,21 @@ class NiimbotBLE:
             await self.client.disconnect()
             log.info("Disconnected")
 
-    async def _send(self, packet: NiimbotPacket, response: bool = False):
-        data = packet.to_bytes()
+    @property
+    def is_connected(self) -> bool:
+        return bool(self.client and self.client.is_connected)
+
+    @property
+    def transport_name(self) -> str:
+        return "BLE"
+
+    async def write_raw(self, data: bytes, response: bool = False):
+        """Write raw bytes to the printer. Used by transport-agnostic print code."""
         log.debug(f"TX ({len(data)} bytes): {data.hex()}")
         await self.client.write_gatt_char(self._write_uuid, data, response=response)
+
+    async def _send(self, packet: NiimbotPacket, response: bool = False):
+        await self.write_raw(packet.to_bytes(), response=response)
 
     async def _recv(self, timeout: float = 3.0) -> list:
         """Wait for and parse response packets."""

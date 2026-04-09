@@ -6,4 +6,5 @@ dist/
 build/
 .venv/
 data/.ble_cache.json
+data/.niimbotd.pid
 images/test image print.png

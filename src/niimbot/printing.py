@@ -2,13 +2,16 @@
 
 Based on the proven print flow from fast_print.py's print_image_proven(),
 which is the only path confirmed to work reliably.
+
+Works with any transport that implements the NiimbotBLE/NiimbotUSB interface:
+write_raw(), transceive(), and the high-level command methods.
 """
 import asyncio
 import logging
 import struct
 from PIL import ImageOps
 
-from niimbot.ble import NiimbotBLE, NiimbotPacket, RequestCode
+from niimbot.ble import NiimbotPacket, RequestCode
 
 log = logging.getLogger("niimbot.printing")
 
@@ -37,18 +40,19 @@ def extract_rows(img):
     return all_rows, w, h, wb
 
 
-async def print_image(printer: NiimbotBLE, img, density: int = 3, batch_size: int = 32):
+async def print_image(printer, img, density: int = 3, batch_size: int = 32):
     """Print a PIL Image on the printer.
 
     This is the single canonical print implementation. All tools should use this.
 
     Args:
-        printer: Connected NiimbotBLE instance.
+        printer: Connected transport (NiimbotBLE or NiimbotUSB).
         img: PIL Image to print (any mode — will be converted to 1-bit).
         density: Print darkness 1-5 (default 3).
-        batch_size: Flow control — write-with-response every N rows.
-                    32 = proven fast and reliable (~2.5s for 350 rows).
-                    1 = safe/slow (~28s for 350 rows).
+        batch_size: Flow control — write-with-response every N rows (BLE only;
+                    USB ignores the response flag since bulk writes are reliable).
+                    32 = proven fast and reliable (~2.5s for 350 rows over BLE).
+                    1 = safe/slow (~28s for 350 rows over BLE).
     """
     rows, w, h, wb = extract_rows(img)
 
@@ -83,7 +87,7 @@ async def print_image(printer: NiimbotBLE, img, density: int = 3, batch_size: in
             pkt = NiimbotPacket(RequestCode.PRINT_BITMAP_ROW, header + row)
 
         use_response = ((y + 1) % batch_size == 0) or (y == h - 1)
-        await printer.client.write_gatt_char(printer._write_uuid, pkt.to_bytes(), response=use_response)
+        await printer.write_raw(pkt.to_bytes(), response=use_response)
 
         if (y + 1) % 100 == 0:
             log.info(f"row {y+1}/{h}")
