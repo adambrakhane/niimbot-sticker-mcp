@@ -22,21 +22,43 @@ final class PopupPanelController {
         })
 
         let panel = PopupPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 760, height: 620),
+            contentRect: NSRect(x: 0, y: 0, width: 580, height: 520),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
-        panel.titleVisibility = .hidden
+        panel.title = "Niimbot"
+        panel.titleVisibility = .visible
         panel.titlebarAppearsTransparent = true
         panel.isFloatingPanel = true
-        panel.level = .statusBar          // above all normal app windows even when inactive
-        panel.hidesOnDeactivate = false   // don't hide when another app becomes active
+        panel.level = .statusBar
+        panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
         panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .ignoresCycle]
         panel.standardWindowButton(.zoomButton)?.isHidden = true
         panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        panel.contentView = NSHostingView(rootView: contentView)
+
+        // NSVisualEffectView as the root — gives the frosted glass background
+        let fx = NSVisualEffectView()
+        fx.blendingMode = .behindWindow
+        fx.material = .popover
+        fx.state = .active
+
+        let hosting = NSHostingView(rootView: contentView)
+        hosting.translatesAutoresizingMaskIntoConstraints = false
+        hosting.wantsLayer = true
+        hosting.layer?.backgroundColor = .clear
+        fx.addSubview(hosting)
+        NSLayoutConstraint.activate([
+            hosting.topAnchor.constraint(equalTo: fx.topAnchor),
+            hosting.leadingAnchor.constraint(equalTo: fx.leadingAnchor),
+            hosting.trailingAnchor.constraint(equalTo: fx.trailingAnchor),
+            hosting.bottomAnchor.constraint(equalTo: fx.bottomAnchor),
+        ])
+
+        panel.contentView = fx
         panel.center()
         panel.makeKeyAndOrderFront(nil)
 

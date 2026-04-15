@@ -18,7 +18,7 @@ struct ContentView: View {
             bottomBar
         }
         .frame(minWidth: 580, minHeight: 440)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Color.clear)
     }
 
     // MARK: - Top bar

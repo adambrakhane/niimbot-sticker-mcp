@@ -12,6 +12,13 @@ rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 
 cp ".build/debug/$PRODUCT_NAME" "$APP_DIR/Contents/MacOS/$PRODUCT_NAME"
+
+# Generate app icon
+ICONSET="$ROOT_DIR/mac-app/AppIcon.iconset"
+python3 "$ROOT_DIR/mac-app/generate_icon.py" "$ICONSET"
+iconutil -c icns "$ICONSET" -o "$APP_DIR/Contents/Resources/AppIcon.icns"
+rm -rf "$ICONSET"
+
 cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -19,10 +26,12 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 <dict>
   <key>CFBundleExecutable</key>
   <string>$PRODUCT_NAME</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
   <key>CFBundleIdentifier</key>
   <string>com.adam.niimbot.popup</string>
   <key>CFBundleName</key>
-  <string>$PRODUCT_NAME</string>
+  <string>Niimbot</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
