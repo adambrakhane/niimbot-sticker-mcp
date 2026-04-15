@@ -11,11 +11,16 @@ dependencies = [
 
 [project.optional-dependencies]
 mcp = ["mcp>=1.0"]
+app = [
+    "mcp>=1.0",
+    "claude-agent-sdk>=0.1",
+]
 
 [project.scripts]
 niimbot-print = "niimbot.tools.fast_print:cli"
 niimbot-calibrate = "niimbot.tools.calibrate:cli"
 niimbotd = "niimbot.daemon:cli"
+niimbot-app-backend = "niimbot.app_backend.__main__:main"
 
 [build-system]
 requires = ["setuptools>=68"]

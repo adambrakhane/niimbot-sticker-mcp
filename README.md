@@ -47,6 +47,34 @@ python -m niimbot.tools.fast_print --density 5 photo.png # darker print
 
 Non-interactive. Reads RFID to look up calibrated dimensions from `data/label_db.json`, prints with a timing breakdown. Typical total time ~7s.
 
+### Popup mac app
+
+The repo now includes a native macOS popup app under `mac-app/`. It opens a centered floating panel, generates sticker drafts through a local Python backend, shows previews, and prints through the existing MCP server path.
+
+Build and open it:
+
+```
+./mac-app/run_app.sh
+```
+
+Build the `.app` bundle only:
+
+```
+./mac-app/build_app.sh
+```
+
+Notes:
+
+- The app launches `python3 -m niimbot.app_backend` locally.
+- The backend expects this repo on `PYTHONPATH` and uses the existing `niimbot.mcp.server`.
+- For AI draft generation, set `ANTHROPIC_API_KEY` and install the optional app dependencies:
+
+```
+pip install -e '.[app]'
+```
+
+- If the Claude Agent SDK is unavailable at runtime, the UI falls back to local prototype cards so the shell can still be exercised.
+
 ### Label calibration
 
 ```

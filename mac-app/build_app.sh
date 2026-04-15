@@ -1,0 +1,43 @@
+#!/bin/zsh
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+APP_DIR="$ROOT_DIR/dist/NiimbotPopup.app"
+PRODUCT_NAME="NiimbotPopup"
+
+cd "$ROOT_DIR/mac-app"
+swift build
+
+rm -rf "$APP_DIR"
+mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
+
+cp ".build/debug/$PRODUCT_NAME" "$APP_DIR/Contents/MacOS/$PRODUCT_NAME"
+cat > "$APP_DIR/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key>
+  <string>$PRODUCT_NAME</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.adam.niimbot.popup</string>
+  <key>CFBundleName</key>
+  <string>$PRODUCT_NAME</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>0.1</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>13.0</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+</dict>
+</plist>
+PLIST
+
+printf "%s\n" "$ROOT_DIR" > "$APP_DIR/Contents/Resources/repo-root.txt"
+chmod +x "$APP_DIR/Contents/MacOS/$PRODUCT_NAME"
+
+echo "Built $APP_DIR"
