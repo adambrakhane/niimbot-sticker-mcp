@@ -9,7 +9,9 @@ struct ContentView: View {
         VStack(spacing: 0) {
             topBar
             Divider()
-            if !viewModel.agentLog.isEmpty {
+            if viewModel.errorExpanded, let error = viewModel.errorMessage {
+                errorDetailView(error)
+            } else if !viewModel.agentLog.isEmpty {
                 agentLogView
             } else {
                 draftList
@@ -19,6 +21,33 @@ struct ContentView: View {
         }
         .frame(minWidth: 580, minHeight: 440)
         .background(Color.clear)
+    }
+
+    private func errorDetailView(_ error: String) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Error details").font(.headline)
+                Spacer()
+                Button("Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(error, forType: .string)
+                }
+                Button("Hide") { viewModel.errorExpanded = false }
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 10)
+            .padding(.bottom, 6)
+
+            ScrollView {
+                Text(error)
+                    .font(.system(size: 11, design: .monospaced))
+                    .textSelection(.enabled)
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+            }
+            .background(Color.red.opacity(0.05))
+        }
     }
 
     // MARK: - Top bar
@@ -110,6 +139,11 @@ struct ContentView: View {
         .padding(40)
     }
 
+    private func errorSummary(_ error: String) -> String {
+        let firstLine = error.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: true).first.map(String.init) ?? error
+        return firstLine
+    }
+
     // MARK: - Bottom bar
 
     private var bottomBar: some View {
@@ -125,7 +159,18 @@ struct ContentView: View {
             if let progress = viewModel.printingProgress {
                 Text(progress).font(.footnote).foregroundStyle(.secondary)
             } else if let error = viewModel.errorMessage {
-                Text(error).font(.footnote).foregroundStyle(.red).lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(errorSummary(error))
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Button(viewModel.errorExpanded ? "Hide" : "Details") {
+                        viewModel.errorExpanded.toggle()
+                    }
+                    .buttonStyle(.link)
+                    .font(.footnote)
+                }
             } else {
                 Text(viewModel.statusMessage).font(.footnote).foregroundStyle(.secondary)
             }

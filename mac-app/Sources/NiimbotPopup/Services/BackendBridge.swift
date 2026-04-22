@@ -29,6 +29,9 @@ final class BackendBridge: NSObject, BackendServing {
     private var stderrHandle: FileHandle?
     private var stdoutBuffer = Data()
     private var pending: [String: PendingRequest] = [:]
+    private var stderrTail: [String] = []
+    private let stderrTailLimit = 200
+    private var logFileHandle: FileHandle?
 
     private struct PendingRequest {
         let continuation: CheckedContinuation<Data, Error>
@@ -106,8 +109,9 @@ final class BackendBridge: NSObject, BackendServing {
         let stderrPipe = Pipe()
         let environment = backendEnvironment()
 
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["python3", "-m", "niimbot.app_backend"]
+        let python = try resolvePython(environment: environment)
+        process.executableURL = URL(fileURLWithPath: python)
+        process.arguments = ["-m", "niimbot.app_backend"]
         process.standardInput = stdinPipe
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
@@ -122,24 +126,139 @@ final class BackendBridge: NSObject, BackendServing {
             }
         }
 
-        stderrPipe.fileHandleForReading.readabilityHandler = { handle in
+        stderrPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             guard !data.isEmpty, let text = String(data: data, encoding: .utf8), !text.isEmpty else { return }
             fputs(text, stderr)
-        }
-
-        process.terminationHandler = { [weak self] process in
             Task { @MainActor in
-                self?.failAllPending(message: "Backend exited with status \(process.terminationStatus)")
-                self?.cleanupHandles()
+                self?.recordStderr(text)
             }
         }
 
+        process.terminationHandler = { [weak self] process in
+            let status = process.terminationStatus
+            let reason = process.terminationReason
+            Task { @MainActor in
+                guard let self else { return }
+                let tail = self.stderrTail.joined()
+                let reasonLabel: String
+                switch reason {
+                case .exit: reasonLabel = "exit"
+                case .uncaughtSignal: reasonLabel = "uncaught signal"
+                @unknown default: reasonLabel = "unknown"
+                }
+                let header = "Backend exited (status=\(status), reason=\(reasonLabel)).\nLog file: \(self.logFilePath() ?? "<unavailable>")"
+                let message: String
+                if tail.isEmpty {
+                    message = "\(header)\n\n(no stderr captured — try running the backend manually: PYTHONPATH=<repo>/src python3 -m niimbot.app_backend)"
+                } else {
+                    message = "\(header)\n\n--- last stderr ---\n\(tail)"
+                }
+                self.failAllPending(message: message)
+                self.cleanupHandles()
+            }
+        }
+
+        openLogFile()
+        stderrTail.removeAll()
         try process.run()
         self.process = process
         self.stdinHandle = stdinPipe.fileHandleForWriting
         self.stdoutHandle = stdoutPipe.fileHandleForReading
         self.stderrHandle = stderrPipe.fileHandleForReading
+        appendToLog("--- backend launched pid=\(process.processIdentifier) python=\(python) at \(Date()) ---\n")
+    }
+
+    private func resolvePython(environment: [String: String]) throws -> String {
+        if let override = environment["NIIMBOT_PYTHON"], !override.isEmpty,
+           FileManager.default.isExecutableFile(atPath: override) {
+            return override
+        }
+
+        if let bundled = Bundle.main.url(forResource: "python-path", withExtension: "txt"),
+           let raw = try? String(contentsOf: bundled, encoding: .utf8) {
+            let path = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !path.isEmpty, FileManager.default.isExecutableFile(atPath: path) {
+                return path
+            }
+        }
+
+        let candidates = [
+            "\(NSHomeDirectory())/.pyenv/shims/python3",
+            "/opt/homebrew/bin/python3",
+            "/usr/local/bin/python3",
+            "/usr/bin/python3",
+        ]
+        for candidate in candidates {
+            if FileManager.default.isExecutableFile(atPath: candidate),
+               pythonHasModule(candidate, module: "bleak") {
+                return candidate
+            }
+        }
+
+        let checked = candidates.joined(separator: "\n  ")
+        throw BackendError.message("""
+            Could not find a Python 3 interpreter with the niimbot dependencies installed.
+
+            Checked:
+              \(checked)
+
+            Fix one of these:
+              • Set NIIMBOT_PYTHON=/absolute/path/to/python3 in the app's environment.
+              • Add a python-path.txt resource to the app bundle with the interpreter path.
+              • Install deps into one of the checked paths: pip install -e '.[app]'
+            """)
+    }
+
+    private func pythonHasModule(_ python: String, module: String) -> Bool {
+        let probe = Process()
+        probe.executableURL = URL(fileURLWithPath: python)
+        probe.arguments = ["-c", "import \(module)"]
+        probe.standardOutput = Pipe()
+        probe.standardError = Pipe()
+        do {
+            try probe.run()
+            probe.waitUntilExit()
+            return probe.terminationStatus == 0
+        } catch {
+            return false
+        }
+    }
+
+    private func recordStderr(_ text: String) {
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map { "\($0)\n" }
+        stderrTail.append(contentsOf: lines)
+        if stderrTail.count > stderrTailLimit {
+            stderrTail.removeFirst(stderrTail.count - stderrTailLimit)
+        }
+        appendToLog(text)
+    }
+
+    private func logFileURL() -> URL? {
+        guard let libraryURL = try? FileManager.default.url(
+            for: .libraryDirectory, in: .userDomainMask, appropriateFor: nil, create: false
+        ) else { return nil }
+        let dir = libraryURL.appendingPathComponent("Logs/Niimbot", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("backend-host.log")
+    }
+
+    private func logFilePath() -> String? {
+        logFileURL()?.path
+    }
+
+    private func openLogFile() {
+        guard let url = logFileURL() else { return }
+        if !FileManager.default.fileExists(atPath: url.path) {
+            FileManager.default.createFile(atPath: url.path, contents: nil)
+        }
+        logFileHandle = try? FileHandle(forWritingTo: url)
+        _ = try? logFileHandle?.seekToEnd()
+    }
+
+    private func appendToLog(_ text: String) {
+        guard let data = text.data(using: .utf8) else { return }
+        try? logFileHandle?.write(contentsOf: data)
     }
 
     private func backendEnvironment() -> [String: String] {
@@ -149,7 +268,6 @@ final class BackendBridge: NSObject, BackendServing {
         let pythonPath = environment["PYTHONPATH"].map { "\(sourcePath):\($0)" } ?? sourcePath
         environment["PYTHONPATH"] = pythonPath
         environment["NIIMBOT_REPO_ROOT"] = repoRoot
-        environment["PYTHON_EXECUTABLE"] = "python3"
         return environment
     }
 
@@ -227,6 +345,8 @@ final class BackendBridge: NSObject, BackendServing {
         stdoutHandle = nil
         stderrHandle = nil
         process = nil
+        try? logFileHandle?.close()
+        logFileHandle = nil
     }
 }
 

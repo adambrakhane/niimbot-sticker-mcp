@@ -8,6 +8,7 @@ final class AppViewModel: ObservableObject {
     @Published var selectedDraftID: UUID?
     @Published var statusMessage = "Enter a prompt to generate sticker drafts."
     @Published var errorMessage: String?
+    @Published var errorExpanded: Bool = false
     @Published var isBusy = false
     @Published var printingProgress: String?
     @Published var agentLog: String = ""
@@ -24,6 +25,26 @@ final class AppViewModel: ObservableObject {
         self.dismissWindow = dismissWindow
     }
 
+    private func reportError(_ error: Error, context: String) {
+        let detail = Self.formatError(error, context: context)
+        NSLog("[Niimbot] %@", detail)
+        errorMessage = detail
+        errorExpanded = true
+    }
+
+    private static func formatError(_ error: Error, context: String) -> String {
+        let ns = error as NSError
+        var parts: [String] = []
+        parts.append("[\(context)] \(error.localizedDescription)")
+        parts.append("Domain: \(ns.domain)  Code: \(ns.code)")
+        if let reason = ns.localizedFailureReason { parts.append("Reason: \(reason)") }
+        if let suggestion = ns.localizedRecoverySuggestion { parts.append("Suggestion: \(suggestion)") }
+        if !ns.userInfo.isEmpty {
+            parts.append("UserInfo: \(ns.userInfo)")
+        }
+        return parts.joined(separator: "\n")
+    }
+
     var canGenerate: Bool {
         !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isBusy
     }
@@ -37,6 +58,7 @@ final class AppViewModel: ObservableObject {
         let prompt = self.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         isBusy = true
         errorMessage = nil
+        errorExpanded = false
         agentLog = ""
         selectedDraftID = nil
         statusMessage = "Generating drafts..."
@@ -51,13 +73,8 @@ final class AppViewModel: ObservableObject {
                 agentLog = ""
                 statusMessage = generated.isEmpty ? "No drafts returned." : "Generated \(generated.count) draft\(generated.count == 1 ? "" : "s")."
             } catch {
-                errorMessage = error.localizedDescription
-                agentLog = ""
+                reportError(error, context: "generate")
                 statusMessage = "Generation failed."
-                if drafts.isEmpty {
-                    drafts = prototypeDrafts()
-                    statusMessage = "Generation failed. Showing local prototype drafts instead."
-                }
             }
             isBusy = false
         }
@@ -114,9 +131,10 @@ final class AppViewModel: ObservableObject {
                 let updated = try await backend.refreshPreview(draft: draft)
                 replaceDraft(updated)
             } catch {
+                let detail = Self.formatError(error, context: "refreshPreview")
                 updateDraft(id: id) {
                     $0.status = .failed
-                    $0.errorMessage = error.localizedDescription
+                    $0.errorMessage = detail
                 }
             }
         }
@@ -139,11 +157,12 @@ final class AppViewModel: ObservableObject {
                 replaceDraft(printed)
                 statusMessage = "Printed."
             } catch {
+                let detail = Self.formatError(error, context: "printOne")
                 updateDraft(id: id) {
                     $0.status = .failed
-                    $0.errorMessage = error.localizedDescription
+                    $0.errorMessage = detail
                 }
-                errorMessage = error.localizedDescription
+                reportError(error, context: "printOne")
                 statusMessage = "Print failed."
             }
             printingProgress = nil
@@ -181,12 +200,13 @@ final class AppViewModel: ObservableObject {
                     printingProgress = nil
                 }
             } catch {
-                errorMessage = error.localizedDescription
+                let detail = Self.formatError(error, context: "printAll")
+                reportError(error, context: "printAll")
                 statusMessage = "Print failed."
                 printingProgress = nil
                 for index in drafts.indices where drafts[index].status == .printing {
                     drafts[index].status = .failed
-                    drafts[index].errorMessage = error.localizedDescription
+                    drafts[index].errorMessage = detail
                 }
             }
             isBusy = false
@@ -206,11 +226,4 @@ final class AppViewModel: ObservableObject {
         drafts[index] = draft
     }
 
-    private func prototypeDrafts() -> [StickerDraft] {
-        [
-            StickerDraft(category: .urgent, title: "Deploy failing", body: "Auth tokens expire after 5 min"),
-            StickerDraft(category: .ticket, title: "Check API rate limits", body: "Before next ship", reference: "OPS-17"),
-            StickerDraft(category: .idea, title: "Persistent BLE session", body: "Skip reconnect between prints"),
-        ]
-    }
 }

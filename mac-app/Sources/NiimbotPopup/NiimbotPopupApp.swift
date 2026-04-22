@@ -10,6 +10,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         PopupPanelController.shared.showPanel()
         return true
     }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
+    }
 }
 
 @main

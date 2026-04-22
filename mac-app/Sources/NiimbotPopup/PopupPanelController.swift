@@ -67,7 +67,7 @@ final class PopupPanelController {
     }
 
     func closePanel() {
-        panel?.orderOut(nil)
+        panel?.close()
     }
 }
 
@@ -77,9 +77,5 @@ final class PopupPanel: NSPanel {
 
     override func cancelOperation(_ sender: Any?) {
         close()
-    }
-
-    override func close() {
-        orderOut(nil)
     }
 }

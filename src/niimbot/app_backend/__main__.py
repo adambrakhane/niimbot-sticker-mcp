@@ -5,13 +5,56 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import sys
+import traceback
 import uuid
+from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from niimbot.app_backend.agent import generate_drafts
-from niimbot.app_backend.mcp_client import NiimbotMCPClient
-from niimbot.app_backend.protocol import (
+
+def _configure_logging() -> Path:
+    log_dir = Path.home() / "Library" / "Logs" / "Niimbot"
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        log_dir = Path("/tmp")
+    log_path = log_dir / "backend.log"
+
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+    formatter = logging.Formatter("%(asctime)s %(name)s:%(levelname)s: %(message)s")
+
+    stderr_handler = logging.StreamHandler(sys.stderr)
+    stderr_handler.setLevel(logging.DEBUG)
+    stderr_handler.setFormatter(formatter)
+    root.addHandler(stderr_handler)
+
+    try:
+        file_handler = logging.FileHandler(log_path, mode="a", encoding="utf-8")
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(formatter)
+        root.addHandler(file_handler)
+    except OSError as exc:
+        root.warning("Could not open log file %s: %s", log_path, exc)
+
+    return log_path
+
+
+_LOG_PATH = _configure_logging()
+log = logging.getLogger("niimbot.app_backend")
+log.info("Backend starting. pid=%d python=%s log_file=%s", os.getpid(), sys.executable, _LOG_PATH)
+
+
+def _excepthook(exc_type, exc, tb) -> None:
+    log.critical("Uncaught exception:\n%s", "".join(traceback.format_exception(exc_type, exc, tb)))
+
+
+sys.excepthook = _excepthook
+
+from niimbot.app_backend.agent import generate_drafts  # noqa: E402
+from niimbot.app_backend.mcp_client import NiimbotMCPClient  # noqa: E402
+from niimbot.app_backend.protocol import (  # noqa: E402
     DraftStatus,
     StickerDraft,
     draft_from_dict,
@@ -19,9 +62,6 @@ from niimbot.app_backend.protocol import (
     make_event,
     make_response,
 )
-
-logging.basicConfig(level=logging.INFO, format="%(name)s:%(levelname)s: %(message)s")
-log = logging.getLogger("niimbot.app_backend")
 
 
 def _write_message(message: dict[str, Any]) -> None:
@@ -190,14 +230,20 @@ async def _run() -> None:
                 result = await service.dispatch(request_id, method, params if isinstance(params, dict) else {})
                 _write_message(make_response(request_id, result))
             except Exception as exc:
-                log.error("Backend request failed: %s", exc, exc_info=True)
-                _write_message(make_error(request_id, str(exc)))
+                tb = traceback.format_exc()
+                log.error("Backend request %s failed: %s\n%s", request_id, exc, tb)
+                detail = f"{type(exc).__name__}: {exc}\n\n{tb}"
+                _write_message(make_error(request_id, detail))
     finally:
         await service.close()
 
 
 def main() -> None:
-    asyncio.run(_run())
+    try:
+        asyncio.run(_run())
+    except Exception:
+        log.critical("Backend crashed:\n%s", traceback.format_exc())
+        raise
 
 
 if __name__ == "__main__":

@@ -16,7 +16,7 @@ final class AppViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.drafts.first?.title, "Check limits")
     }
 
-    func testGenerateFailureFallsBackToPrototypeDrafts() async {
+    func testGenerateFailureSurfacesErrorAndKeepsDraftsEmpty() async {
         let backend = MockBackend()
         backend.generateError = TestError.sample
         let viewModel = AppViewModel(backend: backend)
@@ -25,8 +25,11 @@ final class AppViewModelTests: XCTestCase {
         viewModel.generate()
         await Task.yield()
 
-        XCTAssertEqual(viewModel.drafts.count, 3)
-        XCTAssertEqual(viewModel.statusMessage, "Generation failed. Showing local prototype drafts instead.")
+        XCTAssertEqual(viewModel.drafts.count, 0)
+        XCTAssertEqual(viewModel.statusMessage, "Generation failed.")
+        XCTAssertNotNil(viewModel.errorMessage)
+        XCTAssertTrue(viewModel.errorExpanded)
+        XCTAssertTrue(viewModel.errorMessage?.contains("[generate]") ?? false)
     }
 
     func testPrintAllSuccessDismisses() async {
